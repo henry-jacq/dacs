@@ -1,23 +1,19 @@
-# DACS MVP (Python, WebSocket-Only)
+# DACS
 
-Minimal centralized agent control system using persistent WebSocket connections.
+Distributed Agent Control System (Python MVP) using persistent WebSocket connections.
 
-- `server/` async WebSocket server + interactive console
-- `client/` persistent reconnecting agent
-- `deploy/apache/` reverse proxy example for WSS on 443
+## Components
 
-## Why your 403 happened
+- `server/`: async WebSocket controller with session console
+- `client/`: reconnecting agent with heartbeat and action executor
+- `deploy/apache/`: Apache reverse-proxy example for WSS
 
-The previous FastAPI/ASGI handshake path could reject WebSocket upgrades (403), and the client retried too fast.
-
-This version removes FastAPI/Uvicorn entirely and uses pure `websockets` server, plus reconnect backoff to avoid connection floods.
-
-## Structure
+## Project Layout
 
 ```text
 server/
   app/
-    main.py        # websocket server + operator console
+    main.py
     config.py
     registry.py
     models.py
@@ -39,16 +35,16 @@ client/
     client.example.json
 ```
 
-## Config auto-loading
+## Configuration
 
-Both server and client auto-load in this order:
+Server and client both load config in this order:
 
-1. `.env` file
-2. JSON file
-3. process env variables override file values
+1. `.env`
+2. JSON config
+3. environment variables (override files)
 4. defaults
 
-## Install
+## Quick Start
 
 ```bash
 cd /home/henry/dacs
@@ -57,8 +53,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Configure
-
 ```bash
 cp server/config/.env.example server/config/.env
 cp server/config/server.example.json server/config/server.json
@@ -66,40 +60,42 @@ cp client/config/.env.example client/config/.env
 cp client/config/client.example.json client/config/client.json
 ```
 
-Set same `DACS_AGENT_TOKEN` in server and client config.
+Use the same `DACS_AGENT_TOKEN` value on server and client.
 
-## Run server (with interactive console)
+Start server:
 
 ```bash
-cd /home/henry/dacs
-source .venv/bin/activate
 python -m server.app.main
 ```
 
-Server session console commands:
+Start client(s):
+
+```bash
+python -m client.app.main
+```
+
+For multiple clients, set unique `DACS_CLIENT_ID` values.
+
+## Server Console Commands
 
 - `help`
-- `sessions` / `clients`
+- `sessions` or `clients`
 - `use <client_id>`
-- `run <action> [payload_json]` (runs on active session)
-- `back` (leave active session)
+- `run <action> [payload_json]`
+- `back`
 - `send <client_id> <action> [payload_json]`
 - `broadcast <action> [payload_json]`
 - `task <task_id>`
 - `quit`
 
-Allowed actions: `echo`, `collect_system`, `list_processes`, `list_directory`, `restart_agent`
+Supported actions:
 
-## Run one or more clients
+- `echo`
+- `collect_system`
+- `list_processes`
+- `list_directory`
+- `restart_agent`
 
-```bash
-cd /home/henry/dacs
-source .venv/bin/activate
-python -m client.app.main
-```
+## Apache (WSS)
 
-Use different `DACS_CLIENT_ID` values for multiple clients.
-
-## Apache WSS
-
-`deploy/apache/dacs.conf` still applies. Route `/ws` to `ws://127.0.0.1:8080/ws`.
+Use [dacs.conf](/home/henry/dacs/deploy/apache/dacs.conf) and proxy `/ws` to `ws://127.0.0.1:8080/ws`.
