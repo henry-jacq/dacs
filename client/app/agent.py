@@ -10,7 +10,13 @@ import websocket
 from .config import ClientSettings
 from .executor import Executor
 from .reconnect import backoff_sleep
-from .system_info import get_hostname, get_primary_ip, system_descriptor
+from .system_info import (
+    get_current_user,
+    get_hostname,
+    get_permission_level,
+    get_primary_ip,
+    system_descriptor,
+)
 
 
 log = logging.getLogger("dacs.client")
@@ -140,5 +146,7 @@ class Agent:
                 "hostname": get_hostname(),
                 "ip": get_primary_ip(),
                 "os": system.get("os", "unknown"),
+                "user": get_current_user(),
+                "permission_level": get_permission_level(),
             },
         }

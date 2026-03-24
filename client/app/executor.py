@@ -6,7 +6,13 @@ from typing import Any, Dict
 
 import psutil
 
-from .system_info import get_hostname, get_primary_ip, system_descriptor
+from .system_info import (
+    get_current_user,
+    get_hostname,
+    get_permission_level,
+    get_primary_ip,
+    system_descriptor,
+)
 
 
 class Executor:
@@ -37,6 +43,8 @@ class Executor:
         payload = {
             "hostname": get_hostname(),
             "ip": get_primary_ip(),
+            "user": get_current_user(),
+            "permission_level": get_permission_level(),
             "platform": descriptor.get("platform", platform.platform()),
             "os": descriptor.get("os", os.name),
             "release": descriptor.get("release", ""),

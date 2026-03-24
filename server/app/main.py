@@ -136,6 +136,24 @@ def clear_screen() -> None:
         print("\n" * 60)
 
 
+def _pretty_last_seen(iso_timestamp: str) -> str:
+    try:
+        dt = datetime.fromisoformat(iso_timestamp)
+        local_dt = dt.astimezone()
+        return local_dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return iso_timestamp
+
+
+def format_clients_for_json(clients: Any) -> Any:
+    out = []
+    for client in clients:
+        item = dict(client)
+        item["last_seen"] = _pretty_last_seen(str(item.get("last_seen", "")))
+        out.append(item)
+    return out
+
+
 def _origin_allowed(origin: Optional[str]) -> bool:
     if not settings.allowed_origins:
         return True
@@ -341,7 +359,7 @@ async def console_loop() -> None:
 
         if line in ("clients", "sessions"):
             clients = await registry.list_clients()
-            print(json.dumps(clients, indent=2))
+            print(json.dumps(format_clients_for_json(clients), indent=2))
             continue
 
         if line in ("clear", "cls"):

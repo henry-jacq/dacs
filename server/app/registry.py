@@ -26,7 +26,7 @@ class Registry:
             return [
                 {
                     "client_id": c.client_id,
-                    "version": c.version,
+                    "agent_version": c.version,
                     "last_seen": c.last_seen.isoformat(),
                     "system": c.system,
                 }
