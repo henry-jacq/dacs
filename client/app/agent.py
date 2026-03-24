@@ -13,11 +13,11 @@ from .reconnect import backoff_sleep
 from .system_info import (
     get_current_user,
     get_hostname,
-    get_permission_level,
     get_primary_ip,
     system_descriptor,
 )
 from .tty import TTYManager
+from .transfer import TransferManager
 
 
 log = logging.getLogger("dacs.client")
@@ -29,6 +29,7 @@ class Agent:
         self.executor = Executor()
         self.stop_event = threading.Event()
         self.tty_manager = None
+        self.transfer_manager = None
 
     def run_forever(self) -> None:
         attempt = 0
@@ -130,6 +131,26 @@ class Agent:
                 self.tty_manager.stop()
                 self.tty_manager = None
             return
+        elif mtype == "upload_start":
+            if not self.transfer_manager:
+                self.transfer_manager = TransferManager(ws)
+            self.transfer_manager.ws = ws
+            self.transfer_manager.handle_upload_start(message.get("transfer_id"), message.get("remote_path"))
+            return
+        elif mtype == "upload_chunk":
+            if self.transfer_manager:
+                self.transfer_manager.handle_upload_chunk(message.get("transfer_id"), message.get("data"))
+            return
+        elif mtype == "upload_end":
+            if self.transfer_manager:
+                self.transfer_manager.handle_upload_end(message.get("transfer_id"))
+            return
+        elif mtype == "download_start":
+            if not self.transfer_manager:
+                self.transfer_manager = TransferManager(ws)
+            self.transfer_manager.ws = ws
+            self.transfer_manager.start_download(message.get("transfer_id"), message.get("remote_path"))
+            return
 
         if mtype != "command":
             return
@@ -175,6 +196,5 @@ class Agent:
                 "ip": get_primary_ip(),
                 "os": system.get("os", "unknown"),
                 "user": get_current_user(),
-                "permission_level": get_permission_level(),
             },
         }

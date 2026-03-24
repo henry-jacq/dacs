@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+import base64
+import shlex
 import subprocess
 import sys
 import threading
@@ -24,6 +26,7 @@ settings = load_settings()
 registry = Registry()
 LOCAL_HOST_ALIASES = {"localhost", "127.0.0.1", "::1"}
 active_tty_sessions = set()
+active_downloads = {}
 logging.getLogger("websockets.server").setLevel(logging.WARNING)
 logging.getLogger("websockets").setLevel(logging.WARNING)
 
@@ -136,6 +139,8 @@ def render_help() -> str:
         "Session workflow:",
         "  use <client_id>",
         "  run <action_name> [payload_json]",
+        "  upload <server_file_path> <client_file_path>",
+        "  download <client_file_path> [server_file_path]",
         "  tty <client_id>",
         "  back",
         "",
@@ -271,6 +276,40 @@ async def handle_client_messages(client_id: str, websocket: ServerConnection) ->
             data = message.get("data", "")
             sys.stdout.write(data)
             sys.stdout.flush()
+            continue
+
+        if mtype == "download_chunk":
+            transfer_id = message.get("transfer_id")
+            b64_data = message.get("data")
+            if transfer_id in active_downloads:
+                try:
+                    data = base64.b64decode(b64_data)
+                    active_downloads[transfer_id].write(data)
+                except Exception as e:
+                    console_print(f"Error decoding chunk: {e}", "ERROR")
+            continue
+
+        if mtype == "download_end":
+            transfer_id = message.get("transfer_id")
+            f = active_downloads.pop(transfer_id, None)
+            if f:
+                f.close()
+                console_print(f"Download {transfer_id} finished", "INFO")
+            continue
+            
+        if mtype == "download_error":
+            transfer_id = message.get("transfer_id")
+            err = message.get("error", "Unknown")
+            f = active_downloads.pop(transfer_id, None)
+            if f:
+                f.close()
+            console_print(f"Download {transfer_id} failed: {err}", "ERROR")
+            continue
+            
+        if mtype == "upload_ready":
+            continue
+        if mtype == "upload_error":
+            console_print(f"Upload failed: {message.get('error')}", "ERROR")
             continue
 
         if mtype == "result":
@@ -545,6 +584,138 @@ async def console_loop() -> None:
             if target in active_tty_sessions:
                 active_tty_sessions.remove(target)
             print(f"\r\n{_CYAN}[*] TTY session detached.{_RESET}\r\n")
+            continue
+
+        if line.startswith("upload "):
+            if not active_session:
+                print("No active session. Use: use <client_id>")
+                continue
+            try:
+                parts = shlex.split(line)
+            except Exception:
+                parts = line.split(" ")
+            if len(parts) < 3:
+                print("Usage: upload <server_file_path> <client_file_path>")
+                continue
+                
+            raw_local = parts[1]
+            remote_path = parts[2]
+            
+            # Resolve server path
+            expanded = os.path.expanduser(os.path.expandvars(raw_local))
+            if os.path.isabs(expanded):
+                local_path = expanded
+            else:
+                transfer_dir = os.path.join(os.getcwd(), 'transfers')
+                os.makedirs(transfer_dir, exist_ok=True)
+                cand1 = os.path.join(transfer_dir, expanded)
+                cand2 = os.path.join(os.getcwd(), expanded)
+                if os.path.exists(cand1):
+                    local_path = cand1
+                elif os.path.exists(cand2):
+                    local_path = cand2
+                else:
+                    local_path = cand2
+            
+            client = await registry.get_client(active_session)
+            if not client:
+                print("Session not found")
+                continue
+                
+            if not os.path.exists(local_path):
+                print(f"Local file not found on server: {local_path}")
+                continue
+                
+            transfer_id = str(uuid.uuid4())[:8]
+            print(f"[*] Starting upload {transfer_id} of {local_path} to {remote_path}")
+            
+            async def _upload_task(client_ws, tid, lpath, rpath):
+                try:
+                    await client_ws.send(json.dumps({
+                        "type": "upload_start",
+                        "transfer_id": tid,
+                        "remote_path": rpath
+                    }))
+                    with open(lpath, "rb") as f:
+                        while True:
+                            chunk = await asyncio.to_thread(f.read, 512 * 1024)
+                            if not chunk:
+                                break
+                            b64_data = base64.b64encode(chunk).decode("utf-8")
+                            await client_ws.send(json.dumps({
+                                "type": "upload_chunk",
+                                "transfer_id": tid,
+                                "data": b64_data
+                            }))
+                    await client_ws.send(json.dumps({
+                        "type": "upload_end",
+                        "transfer_id": tid
+                    }))
+                    console_print(f"Upload {tid} finished", "INFO")
+                except Exception as e:
+                    console_print(f"Upload {tid} failed: {e}", "ERROR")
+            
+            asyncio.create_task(_upload_task(client.websocket, transfer_id, local_path, remote_path))
+            continue
+
+        if line.startswith("download "):
+            if not active_session:
+                print("No active session. Use: use <client_id>")
+                continue
+            try:
+                parts = shlex.split(line)
+            except Exception:
+                parts = line.split(" ")
+            if len(parts) < 2:
+                print("Usage: download <client_file_path> [server_file_path]")
+                continue
+                
+            remote_path = parts[1]
+            if len(parts) >= 3:
+                raw_local = parts[2]
+            else:
+                raw_local = os.path.join('transfers', os.path.basename(remote_path.replace("\\", "/")))
+            
+            # Resolve server path
+            expanded = os.path.expanduser(os.path.expandvars(raw_local))
+            if os.path.isabs(expanded):
+                local_path = expanded
+            else:
+                transfer_dir = os.path.join(os.getcwd(), 'transfers')
+                os.makedirs(transfer_dir, exist_ok=True)
+                if raw_local.startswith("transfers"):
+                    local_path = os.path.join(os.getcwd(), expanded)
+                else:
+                    local_path = os.path.join(transfer_dir, expanded)
+
+            try:
+                os.makedirs(os.path.dirname(os.path.abspath(local_path)), exist_ok=True)
+            except Exception:
+                pass
+            
+            client = await registry.get_client(active_session)
+            if not client:
+                print("Session not found")
+                continue
+                
+            transfer_id = str(uuid.uuid4())[:8]
+            try:
+                f = open(local_path, "wb")
+                active_downloads[transfer_id] = f
+            except Exception as e:
+                print(f"Failed to open local file on server: {e}")
+                continue
+                
+            print(f"[*] Starting download {transfer_id} from {remote_path} to {local_path}")
+            try:
+                await client.websocket.send(json.dumps({
+                    "type": "download_start",
+                    "transfer_id": transfer_id,
+                    "remote_path": remote_path
+                }))
+            except Exception as e:
+                print(f"Failed to send request: {e}")
+                active_downloads.pop(transfer_id, None).close()
             continue
 
         if line.startswith("use "):

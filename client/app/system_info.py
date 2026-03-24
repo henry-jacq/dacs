@@ -45,28 +45,6 @@ def get_current_user() -> str:
         return "unknown"
 
 
-def get_permission_level() -> str:
-    # Windows admin detection
-    try:
-        import ctypes  # type: ignore
-
-        if platform.system().lower() == "windows":
-            return "admin" if bool(ctypes.windll.shell32.IsUserAnAdmin()) else "user"
-    except Exception:
-        pass
-
-    # POSIX root detection
-    try:
-        import os
-
-        if hasattr(os, "geteuid"):
-            return "admin" if os.geteuid() == 0 else "user"
-    except Exception:
-        pass
-
-    return "unknown"
-
-
 def system_descriptor() -> Dict[str, str]:
     return {
         "os": platform.system().lower() or "unknown",
