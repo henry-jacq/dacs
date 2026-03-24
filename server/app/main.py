@@ -39,6 +39,33 @@ _YELLOW = "\033[33m" if _COLOR else ""
 _RED = "\033[31m" if _COLOR else ""
 _CYAN = "\033[36m" if _COLOR else ""
 
+ACTION_SCHEMAS: Dict[str, Dict[str, Any]] = {
+    "echo": {
+        "description": "Return a text message",
+        "fields": [
+            {"name": "message", "prompt": "Message", "required": True},
+        ],
+    },
+    "collect_system": {
+        "description": "Collect host/system telemetry",
+        "fields": [],
+    },
+    "list_processes": {
+        "description": "List running processes",
+        "fields": [],
+    },
+    "list_directory": {
+        "description": "List files in a directory",
+        "fields": [
+            {"name": "path", "prompt": "Directory path", "required": False, "default": "."},
+        ],
+    },
+    "restart_agent": {
+        "description": "Restart the remote agent",
+        "fields": [],
+    },
+}
+
 
 def setup_readline() -> None:
     """Enable arrow-key history navigation when readline is available."""
@@ -94,6 +121,7 @@ def console_print(message: str, level: str = "INFO") -> None:
 
 
 def render_help() -> str:
+    available_actions = ", ".join(sorted(ALLOWED_ACTIONS))
     lines = [
         f"{_BOLD}DACS Session Console{_RESET}",
         "----------------------------------------",
@@ -106,15 +134,15 @@ def render_help() -> str:
         "",
         "Session workflow:",
         "  use <client_id>",
-        "  run <action> [payload_json]",
+        "  run <action_name> [payload_json]",
         "  back",
         "",
         "Direct dispatch:",
-        "  send <client_id> <action> [payload_json]",
-        "  broadcast <action> [payload_json]",
+        "  send <client_id> <action_name> [payload_json]",
+        "  broadcast <action_name> [payload_json]",
         "",
-        "Allowed actions:",
-        "  echo, collect_system, list_processes, list_directory, restart_agent",
+        "Available actions:",
+        f"  {available_actions}",
         "----------------------------------------",
     ]
     return "\n".join(lines)
@@ -197,6 +225,11 @@ async def send_command(client_id: str, action: str, payload: Optional[Dict[str, 
 
     try:
         await client.websocket.send(json.dumps(command_message(task_id, action, payload or {})))
+        console_print(
+            "Dispatched action='%s' task_id=%s target=%s"
+            % (action, task_id, client_id),
+            "INFO",
+        )
         return True, task_id
     except Exception as exc:
         await registry.update_task(task_id, client_id, "error", f"dispatch_failed: {exc}")
@@ -233,13 +266,27 @@ async def handle_client_messages(client_id: str, websocket: ServerConnection) ->
             continue
 
         if mtype == "result":
+            task_id = message.get("task_id", "")
+            status = message.get("status", "unknown")
+            output = message.get("output", "")
             await registry.update_task(
-                task_id=message.get("task_id", ""),
+                task_id=task_id,
                 client_id=client_id,
-                status=message.get("status", "unknown"),
-                output=message.get("output", ""),
+                status=status,
+                output=output,
             )
             await registry.touch(client_id)
+
+            task_info = await registry.get_task(task_id)
+            action = task_info.get("action", "unknown") if task_info else "unknown"
+            preview = str(output).replace("\n", " ")
+            if len(preview) > 120:
+                preview = preview[:117] + "..."
+            console_print(
+                "Result action='%s' task_id=%s client=%s status=%s output=%s"
+                % (action, task_id, client_id, status, preview),
+                "INFO",
+            )
             continue
 
 
@@ -335,6 +382,42 @@ def _parse_json_payload(raw: str) -> Dict[str, Any]:
     return parsed
 
 
+def _build_payload_interactive(action: str) -> Optional[Dict[str, Any]]:
+    schema = ACTION_SCHEMAS.get(action)
+    if not schema:
+        console_print(f"Unknown action '{action}'. Type 'help' to see available actions.", "WARN")
+        return None
+
+    fields = schema.get("fields", [])
+    if not fields:
+        return {}
+
+    payload: Dict[str, Any] = {}
+    print(f"Action: {action}")
+    for field in fields:
+        name = field.get("name")
+        prompt = field.get("prompt", name)
+        required = bool(field.get("required", False))
+        default = field.get("default")
+
+        suffix = " (required)" if required else ""
+        default_hint = f" [default: {default}]" if default is not None else ""
+        value = input(f"  {prompt}{suffix}{default_hint}: ").strip()
+
+        if not value:
+            if default is not None:
+                payload[name] = default
+                continue
+            if required:
+                print(f"  Field '{name}' is required.")
+                return None
+            continue
+
+        payload[name] = value
+
+    return payload
+
+
 async def console_loop() -> None:
     global _prompt_visible, _active_prompt
     setup_readline()
@@ -391,15 +474,19 @@ async def console_loop() -> None:
                 continue
             parts = line.split(" ", 2)
             if len(parts) < 2:
-                print("Usage: run <action> [payload_json]")
+                print("Usage: run <action_name> [payload_json]")
                 continue
             action = parts[1]
-            payload = {}
+            payload: Optional[Dict[str, Any]] = None
             if len(parts) == 3:
                 try:
                     payload = _parse_json_payload(parts[2])
                 except Exception as exc:
                     print(f"Invalid payload: {exc}")
+                    continue
+            else:
+                payload = await asyncio.to_thread(_build_payload_interactive, action)
+                if payload is None:
                     continue
             ok, info = await send_command(active_session, action, payload)
             print(f"task_id={info}" if ok else f"error={info}")
@@ -408,7 +495,7 @@ async def console_loop() -> None:
         if line.startswith("send "):
             parts = line.split(" ", 3)
             if len(parts) < 3:
-                print("Usage: send <client_id> <action> [payload_json]")
+                print("Usage: send <client_id> <action_name> [payload_json]")
                 continue
             client_id = parts[1]
             action = parts[2]
@@ -426,7 +513,7 @@ async def console_loop() -> None:
         if line.startswith("broadcast "):
             parts = line.split(" ", 2)
             if len(parts) < 2:
-                print("Usage: broadcast <action> [payload_json]")
+                print("Usage: broadcast <action_name> [payload_json]")
                 continue
             action = parts[1]
             payload = {}

@@ -117,8 +117,15 @@ class Agent:
         task_id = message.get("task_id", "")
         action = message.get("action", "")
         payload = message.get("payload") or {}
+        log.info("action received action=%s task_id=%s", action, task_id)
 
         result = self.executor.run(action, payload)
+        log.info(
+            "action executed action=%s task_id=%s status=%s",
+            action,
+            task_id,
+            result.get("status"),
+        )
         ws.send(
             json.dumps(
                 {
@@ -130,6 +137,7 @@ class Agent:
                 }
             )
         )
+        log.info("result sent action=%s task_id=%s", action, task_id)
 
         if action == "restart_agent" and result["status"] == "success":
             time.sleep(0.5)

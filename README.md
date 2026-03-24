@@ -84,20 +84,25 @@ For multiple clients, set unique `DACS_CLIENT_ID` values.
 - `help`
 - `sessions` or `clients`
 - `use <client_id>`
-- `run <action> [payload_json]`
+- `run <action_name> [payload_json]`
 - `back`
-- `send <client_id> <action> [payload_json]`
-- `broadcast <action> [payload_json]`
+- `send <client_id> <action_name> [payload_json]`
+- `broadcast <action_name> [payload_json]`
 - `task <task_id>`
 - `quit`
 
-Supported actions:
+Available actions:
 
 - `echo`
 - `collect_system`
 - `list_processes`
 - `list_directory`
 - `restart_agent`
+
+Notes:
+
+- `run <action_name>` without payload enters interactive input mode based on action schema.
+- `run <action_name> <payload_json>` still works for non-interactive dispatch.
 
 ## Apache (WSS)
 
