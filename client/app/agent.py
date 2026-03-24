@@ -70,7 +70,10 @@ class Agent:
         if not reason_text:
             reason_text = "no_reason"
 
-        log.warning("disconnected code=%s reason=%s", code_text, reason_text)
+        if code in (1000, 1001):
+            log.info("disconnected code=%s reason=%s", code_text, reason_text)
+        else:
+            log.warning("disconnected code=%s reason=%s", code_text, reason_text)
 
     def _on_error(self, err: Any) -> None:
         text = str(err)
