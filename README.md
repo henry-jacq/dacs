@@ -1,50 +1,41 @@
-# DACS
+# DACS (Distributed Agent Control System)
 
-Distributed Agent Control System (Python MVP) using persistent WebSocket connections.
+A high-performance, OS-agnostic Distributed Agent Control System operating over persistent WebSocket connections. Built for remote management, offering robust bi-directional interactive shells and large-scale file streaming.
 
-## Components
+## 🚀 Key Features
 
-- `server/`: async WebSocket controller with session console
-- `client/`: reconnecting agent with heartbeat and action executor
-- `deploy/apache/`: Apache reverse-proxy example for WSS
+- **Asynchronous WebSocket Architecture**: Lightweight, high-concurrency server handling numerous remote clients using a custom JSON-RPC style event loop.
+- **Interactive Reverse TTY**: Full pseudo-terminal (PTY) allocation on POSIX systems with seamless Windows standard-pipe fallback. Creates native raw-mode shell environments complete with command auto-completion and stable process isolation.
+- **Chunked File Transfer**: Built-in support for streaming massive files over WebSockets (`upload` and `download`) using background encoding to completely prevent memory explosion.
+- **Dynamic Task Dispatch**: Send native dynamic tasks easily from the server to specific client agents asynchronously without blocking the central heartbeat multiplexer.
 
-## Project Layout
+---
+
+## 📂 Project Structure
 
 ```text
 server/
-  app/
-    main.py
-    config.py
-    registry.py
-    models.py
-    env_loader.py
-  config/
-    .env.example
-    server.example.json
+  app/            # Async WebSocket Controller & Interactive Tactical Console
+  config/         # Server Configuration
 
 client/
-  app/
-    main.py
-    agent.py
-    config.py
-    executor.py
-    reconnect.py
-    env_loader.py
-  config/
-    .env.example
-    client.example.json
+  app/            # Reconnecting Agent, Executor, TTY, & Transfer components
+  config/         # Client Configuration
+
+deploy/apache/    # Apache Reverse-Proxy (WSS) reference
 ```
 
-## Configuration
+## ⚙️ Configuration
 
-Server and client both load config in this order:
+Configuration values are dynamically loaded overriding defaults in the following precise order:
+1. `.env` files
+2. JSON configuration files
+3. Active system Environment Variables
+4. Application defaults
 
-1. `.env`
-2. JSON config
-3. environment variables (override files)
-4. defaults
+## ⚡ Quick Start
 
-## Quick Start
+### 1. Installation
 
 ```bash
 cd /home/henry/dacs
@@ -53,57 +44,58 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### 2. Configure Environment
+
+Copy the example configurations to bootstrap your setup:
 ```bash
 cp server/config/.env.example server/config/.env
 cp server/config/server.example.json server/config/server.json
 cp client/config/.env.example client/config/.env
 cp client/config/client.example.json client/config/client.json
 ```
+**Important**: Ensure the `DACS_AGENT_TOKEN` is identical across both the server and initialized clients. Customize `DACS_CLIENT_ID` uniquely for each client prior to running.
 
-Use the same `DACS_AGENT_TOKEN` value on server and client.
-Optional client tuning:
-`DACS_WS_PING_INTERVAL_SECONDS`, `DACS_WS_PING_TIMEOUT_SECONDS`,
-`DACS_RECONNECT_BASE_SECONDS`, `DACS_RECONNECT_CAP_SECONDS`.
+### 3. Launching DACS
 
-Start server:
-
+**Start the Server:**
 ```bash
 python -m server.app.main
 ```
 
-Start client(s):
-
+**Start the Client:**
 ```bash
 python -m client.app.main
 ```
 
-For multiple clients, set unique `DACS_CLIENT_ID` values.
+---
 
-## Server Console Commands
+## 💻 Server Console Commands
 
-- `help`
-- `sessions` or `clients`
-- `use <client_id>`
-- `run <action_name> [payload_json]`
-- `back`
-- `send <client_id> <action_name> [payload_json]`
-- `broadcast <action_name> [payload_json]`
-- `task <task_id>`
-- `quit`
+The DACS Command Line Interface operates via a tactical console tracking connected clients and managing interactive task states.
 
-Available actions:
+### Core Workflow
+- `help`: View all available commands
+- `sessions` / `clients`: List currently connected active nodes
+- `use <client_id>`: Enter an interactive session targeting a specific client
+- `back`: Exit the active context session
+- `clear` / `cls`: Clear the console output
+- `quit`: Shutdown the server cleanly
 
-- `echo`
-- `collect_system`
-- `list_processes`
-- `list_directory`
+### Session Commands (Requires `use <client_id>`)
+- `tty`: Initiates a raw, bi-directional interactive OS shell. Press `Ctrl+X` to gracefully detach and background the shell process.
+- `upload <local_path> <remote_path>`: Streams a file to the remote client. Safely auto-expands `~` and resolves paths using the native `transfers/` isolation directory logic.
+- `download <remote_path> <local_path>`: Streams a file from the client. Leaving `<local_path>` blank automatically routes the file securely into the local server's `transfers/` folder.
+- `run <action_name> [payload_json]`: Execute a designated action template interactively or via hardcoded JSON payload.
+
+### Available Actions (`run`)
 - `restart_agent`
 
-Notes:
+### Task History
+- `task <task_id>`: Query a task's full result details in JSON
 
-- `run <action_name>` without payload enters interactive input mode based on action schema.
-- `run <action_name> <payload_json>` still works for non-interactive dispatch.
+---
 
-## Apache (WSS)
+## 🌐 Secure Deployment (WSS)
 
-Use [dacs.conf](/home/henry/dacs/deploy/apache/dacs.conf) and proxy `/ws` to `ws://127.0.0.1:8080/ws`.
+For deploying over an encrypted `wss://` protocol:
+Use the provided [dacs.conf](deploy/apache/dacs.conf) to setup an Apache reverse-proxy routing your secure WebSocket layer proxying `/ws` into the private listening socket on `ws://127.0.0.1:8080/ws`.
