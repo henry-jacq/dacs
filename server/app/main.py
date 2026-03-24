@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import os
+import subprocess
 import sys
 import threading
 import uuid
@@ -36,6 +38,27 @@ _GREEN = "\033[32m" if _COLOR else ""
 _YELLOW = "\033[33m" if _COLOR else ""
 _RED = "\033[31m" if _COLOR else ""
 _CYAN = "\033[36m" if _COLOR else ""
+
+
+def setup_readline() -> None:
+    """Enable arrow-key history navigation when readline is available."""
+    try:
+        import atexit
+        import readline
+
+        history_path = os.path.expanduser("~/.dacs_history")
+        try:
+            readline.read_history_file(history_path)
+        except FileNotFoundError:
+            pass
+
+        readline.parse_and_bind("tab: complete")
+        readline.parse_and_bind("set editing-mode emacs")
+        readline.set_history_length(500)
+        atexit.register(readline.write_history_file, history_path)
+    except Exception:
+        # Non-fatal: console still works without readline.
+        pass
 
 
 def _now_str() -> str:
@@ -78,6 +101,7 @@ def render_help() -> str:
         "  help",
         "  sessions | clients",
         "  task <task_id>",
+        "  clear | cls",
         "  quit",
         "",
         "Session workflow:",
@@ -94,6 +118,22 @@ def render_help() -> str:
         "----------------------------------------",
     ]
     return "\n".join(lines)
+
+
+def clear_screen() -> None:
+    """Clear terminal screen across common shells/OSes."""
+    cmd = ["cls"] if os.name == "nt" else ["clear"]
+    try:
+        subprocess.run(cmd, check=False)
+        return
+    except Exception:
+        pass
+
+    # Fallback for minimal terminals
+    if _COLOR:
+        print("\033[2J\033[H", end="", flush=True)
+    else:
+        print("\n" * 60)
 
 
 def _origin_allowed(origin: Optional[str]) -> bool:
@@ -279,6 +319,7 @@ def _parse_json_payload(raw: str) -> Dict[str, Any]:
 
 async def console_loop() -> None:
     global _prompt_visible, _active_prompt
+    setup_readline()
     help_text = render_help()
     print(help_text)
 
@@ -301,6 +342,11 @@ async def console_loop() -> None:
         if line in ("clients", "sessions"):
             clients = await registry.list_clients()
             print(json.dumps(clients, indent=2))
+            continue
+
+        if line in ("clear", "cls"):
+            clear_screen()
+            print(render_help())
             continue
 
         if line == "back":
