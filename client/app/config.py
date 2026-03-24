@@ -15,6 +15,10 @@ class ClientSettings:
     version: str
     heartbeat_seconds: float
     insecure_tls: bool
+    ping_interval_seconds: float
+    ping_timeout_seconds: float
+    reconnect_base_seconds: float
+    reconnect_cap_seconds: float
 
 
 def _to_bool(value: Any, fallback: bool = False) -> bool:
@@ -54,4 +58,20 @@ def load_settings() -> ClientSettings:
         version=os.getenv("DACS_AGENT_VERSION", cfg.get("version", "1.0")),
         heartbeat_seconds=_to_float(os.getenv("DACS_HEARTBEAT_SECONDS", cfg.get("heartbeat_seconds", 10.0)), 10.0),
         insecure_tls=_to_bool(os.getenv("DACS_INSECURE_TLS", cfg.get("insecure_tls", False))),
+        ping_interval_seconds=_to_float(
+            os.getenv("DACS_WS_PING_INTERVAL_SECONDS", cfg.get("ping_interval_seconds", 30.0)),
+            30.0,
+        ),
+        ping_timeout_seconds=_to_float(
+            os.getenv("DACS_WS_PING_TIMEOUT_SECONDS", cfg.get("ping_timeout_seconds", 10.0)),
+            10.0,
+        ),
+        reconnect_base_seconds=_to_float(
+            os.getenv("DACS_RECONNECT_BASE_SECONDS", cfg.get("reconnect_base_seconds", 2.0)),
+            2.0,
+        ),
+        reconnect_cap_seconds=_to_float(
+            os.getenv("DACS_RECONNECT_CAP_SECONDS", cfg.get("reconnect_cap_seconds", 30.0)),
+            30.0,
+        ),
     )

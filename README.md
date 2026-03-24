@@ -61,6 +61,9 @@ cp client/config/client.example.json client/config/client.json
 ```
 
 Use the same `DACS_AGENT_TOKEN` value on server and client.
+Optional client tuning:
+`DACS_WS_PING_INTERVAL_SECONDS`, `DACS_WS_PING_TIMEOUT_SECONDS`,
+`DACS_RECONNECT_BASE_SECONDS`, `DACS_RECONNECT_CAP_SECONDS`.
 
 Start server:
 

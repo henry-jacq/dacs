@@ -4,5 +4,9 @@
   "token": "change-me-agent-token",
   "version": "1.0",
   "heartbeat_seconds": 10,
-  "insecure_tls": false
+  "insecure_tls": false,
+  "ping_interval_seconds": 30,
+  "ping_timeout_seconds": 10,
+  "reconnect_base_seconds": 2,
+  "reconnect_cap_seconds": 30
 }

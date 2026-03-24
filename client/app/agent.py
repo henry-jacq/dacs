@@ -1,6 +1,5 @@
 import json
 import logging
-import socket
 import ssl
 import threading
 import time
@@ -11,6 +10,7 @@ import websocket
 from .config import ClientSettings
 from .executor import Executor
 from .reconnect import backoff_sleep
+from .system_info import get_hostname, get_primary_ip, system_descriptor
 
 
 log = logging.getLogger("dacs.client")
@@ -34,7 +34,11 @@ class Agent:
             else:
                 attempt = 1
 
-            delay = backoff_sleep(attempt)
+            delay = backoff_sleep(
+                attempt,
+                base=self.settings.reconnect_base_seconds,
+                cap=self.settings.reconnect_cap_seconds,
+            )
             log.info("reconnect scheduled in %.1fs (attempt=%d)", delay, attempt)
 
     def _connect_once(self) -> float:
@@ -51,7 +55,11 @@ class Agent:
             sslopt = {"cert_reqs": ssl.CERT_NONE if self.settings.insecure_tls else ssl.CERT_REQUIRED}
 
         started = time.time()
-        ws.run_forever(sslopt=sslopt, ping_interval=30, ping_timeout=10)
+        ws.run_forever(
+            sslopt=sslopt,
+            ping_interval=self.settings.ping_interval_seconds,
+            ping_timeout=self.settings.ping_timeout_seconds,
+        )
         return time.time() - started
 
     def _on_open(self, ws: websocket.WebSocketApp) -> None:
@@ -122,21 +130,15 @@ class Agent:
             ws.close()
 
     def _register_message(self) -> Dict[str, Any]:
+        system = system_descriptor()
         return {
             "type": "register",
             "client_id": self.settings.client_id,
             "token": self.settings.token,
             "version": self.settings.version,
             "system": {
-                "hostname": socket.gethostname(),
-                "ip": self._ip(),
-                "os": "python-agent",
+                "hostname": get_hostname(),
+                "ip": get_primary_ip(),
+                "os": system.get("os", "unknown"),
             },
         }
-
-    @staticmethod
-    def _ip() -> str:
-        try:
-            return socket.gethostbyname(socket.gethostname())
-        except Exception:
-            return "unknown"
