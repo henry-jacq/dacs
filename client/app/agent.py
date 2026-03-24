@@ -17,6 +17,7 @@ from .system_info import (
     get_primary_ip,
     system_descriptor,
 )
+from .tty import TTYManager
 
 
 log = logging.getLogger("dacs.client")
@@ -27,6 +28,7 @@ class Agent:
         self.settings = settings
         self.executor = Executor()
         self.stop_event = threading.Event()
+        self.tty_manager = None
 
     def run_forever(self) -> None:
         attempt = 0
@@ -111,7 +113,25 @@ class Agent:
             log.warning("invalid_json")
             return
 
-        if message.get("type") != "command":
+        mtype = message.get("type")
+
+        if mtype == "tty_start":
+            if self.tty_manager:
+                self.tty_manager.stop()
+            self.tty_manager = TTYManager(ws, self.settings.client_id)
+            self.tty_manager.start()
+            return
+        elif mtype == "tty_input":
+            if self.tty_manager:
+                self.tty_manager.write(message.get("data", ""))
+            return
+        elif mtype == "tty_stop":
+            if self.tty_manager:
+                self.tty_manager.stop()
+                self.tty_manager = None
+            return
+
+        if mtype != "command":
             return
 
         task_id = message.get("task_id", "")

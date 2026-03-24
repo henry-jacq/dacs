@@ -17,15 +17,15 @@ class PrettyFormatter(logging.Formatter):
         ts = self.formatTime(record, "%H:%M:%S")
         level = record.levelname
         if level == "INFO":
-            sev = f"{self.GREEN}{level:<5}{self.RESET}"
+            prefix = f"{self.GREEN}[+]{self.RESET}"
         elif level in ("WARNING", "WARN"):
-            sev = f"{self.YELLOW}{level:<5}{self.RESET}"
+            prefix = f"{self.YELLOW}[!]{self.RESET}"
         elif level == "ERROR":
-            sev = f"{self.RED}{level:<5}{self.RESET}"
+            prefix = f"{self.RED}[-]{self.RESET}"
         else:
-            sev = f"{level:<5}"
+            prefix = f"{self.DIM}[*]{self.RESET}"
         msg = record.getMessage()
-        return f"{self.DIM}{ts}{self.RESET} | {sev} | {msg}"
+        return f"{self.DIM}{ts}{self.RESET} {prefix} {msg}"
 
 
 def configure_logging() -> None:

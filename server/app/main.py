@@ -23,6 +23,7 @@ log = logging.getLogger("dacs.server")
 settings = load_settings()
 registry = Registry()
 LOCAL_HOST_ALIASES = {"localhost", "127.0.0.1", "::1"}
+active_tty_sessions = set()
 logging.getLogger("websockets.server").setLevel(logging.WARNING)
 logging.getLogger("websockets").setLevel(logging.WARNING)
 
@@ -95,12 +96,12 @@ def _now_str() -> str:
 def _level_style(level: str) -> str:
     normalized = level.upper()
     if normalized == "INFO":
-        return f"{_GREEN}{normalized:<5}{_RESET}"
+        return f"{_GREEN}[+]{_RESET}"
     if normalized in ("WARN", "WARNING"):
-        return f"{_YELLOW}{normalized:<5}{_RESET}"
+        return f"{_YELLOW}[!]{_RESET}"
     if normalized in ("ERR", "ERROR"):
-        return f"{_RED}{normalized:<5}{_RESET}"
-    return f"{_CYAN}{normalized:<5}{_RESET}"
+        return f"{_RED}[-]{_RESET}"
+    return f"{_CYAN}[*]{_RESET}"
 
 
 def console_print(message: str, level: str = "INFO") -> None:
@@ -114,7 +115,7 @@ def console_print(message: str, level: str = "INFO") -> None:
                 sys.stdout.write("\r")
         ts = f"{_DIM}{_now_str()}{_RESET}"
         sev = _level_style(level)
-        sys.stdout.write(f"{ts} | {sev} | {message}\n")
+        sys.stdout.write(f"{ts} {sev} {message}\n")
         if _prompt_visible:
             sys.stdout.write(_active_prompt)
         sys.stdout.flush()
@@ -135,6 +136,7 @@ def render_help() -> str:
         "Session workflow:",
         "  use <client_id>",
         "  run <action_name> [payload_json]",
+        "  tty <client_id>",
         "  back",
         "",
         "Direct dispatch:",
@@ -265,6 +267,12 @@ async def handle_client_messages(client_id: str, websocket: ServerConnection) ->
             await registry.touch(client_id)
             continue
 
+        if mtype == "tty_output":
+            data = message.get("data", "")
+            sys.stdout.write(data)
+            sys.stdout.flush()
+            continue
+
         if mtype == "result":
             task_id = message.get("task_id", "")
             status = message.get("status", "unknown")
@@ -357,6 +365,8 @@ async def ws_handler(websocket: ServerConnection) -> None:
         log.exception("Connection error (%s): %s", client_id, exc)
     finally:
         await registry.remove_client(client_id)
+        if client_id in active_tty_sessions:
+            active_tty_sessions.remove(client_id)
         if client_id:
             console_print("Client disconnected: %s" % client_id, "INFO")
 
@@ -422,7 +432,14 @@ async def console_loop() -> None:
     global _prompt_visible, _active_prompt
     setup_readline()
     help_text = render_help()
-    print(help_text)
+    
+    dashboard_text = "\n".join([
+        f"{_BOLD}DACS Session Console{_RESET}",
+        "----------------------------------------",
+        "Type 'help' to see available commands.",
+        "----------------------------------------",
+    ])
+    print(dashboard_text)
 
     active_session: Optional[str] = None
 
@@ -447,7 +464,7 @@ async def console_loop() -> None:
 
         if line in ("clear", "cls"):
             clear_screen()
-            print(render_help())
+            print(dashboard_text)
             continue
 
         if line == "back":
@@ -456,6 +473,79 @@ async def console_loop() -> None:
 
         if line == "quit":
             raise KeyboardInterrupt
+
+        if line.startswith("tty "):
+            target = line.split(" ", 1)[1].strip()
+            if not target:
+                print("Usage: tty <client_id>")
+                continue
+            client = await registry.get_client(target)
+            if not client:
+                print("Session not found")
+                continue
+            
+            if target in active_tty_sessions:
+                print("Session is currently busy with another admin")
+                continue
+                
+            active_tty_sessions.add(target)
+            
+            try:
+                await client.websocket.send(json.dumps({"type": "tty_start"}))
+            except Exception as e:
+                print(f"Failed to start tty: {e}")
+                active_tty_sessions.remove(target)
+                continue
+                
+            print(f"\r\n{_CYAN}[*] Initiating interactive TTY session...{_RESET}")
+            print(f"{_DIM}[Tip] Press Ctrl+X to background and detach from the session.{_RESET}\r\n")
+            
+            async def read_input_loop(client_ws):
+                class RawTerminal:
+                    def __enter__(self):
+                        try:
+                            if os.name != 'nt' and sys.stdin.isatty():
+                                import tty, termios
+                                self.fd = sys.stdin.fileno()
+                                self.old_settings = termios.tcgetattr(self.fd)
+                                tty.setraw(self.fd)
+                        except Exception:
+                            self.old_settings = None
+                        return self
+                    def __exit__(self, *args):
+                        try:
+                            if hasattr(self, "old_settings") and self.old_settings:
+                                import termios
+                                termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old_settings)
+                        except Exception:
+                            pass
+                            
+                with RawTerminal():
+                    while True:
+                        if os.name == 'nt':
+                            import msvcrt
+                            ch_bytes = await asyncio.to_thread(msvcrt.getch)
+                            ch = ch_bytes.decode('utf-8', 'ignore') if isinstance(ch_bytes, bytes) else ch_bytes
+                        else:
+                            ch = await asyncio.to_thread(sys.stdin.read, 1)
+                            
+                        if not ch or ch == '\x18':
+                            try:
+                                await client_ws.send(json.dumps({"type": "tty_stop"}))
+                            except Exception:
+                                pass
+                            break
+                            
+                        try:
+                            await client_ws.send(json.dumps({"type": "tty_input", "data": ch}))
+                        except Exception:
+                            break
+
+            await read_input_loop(client.websocket)
+            if target in active_tty_sessions:
+                active_tty_sessions.remove(target)
+            print(f"\r\n{_CYAN}[*] TTY session detached.{_RESET}\r\n")
+            continue
 
         if line.startswith("use "):
             target = line.split(" ", 1)[1].strip()
