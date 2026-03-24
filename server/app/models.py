@@ -30,10 +30,6 @@ class TaskResult:
 
 
 ALLOWED_ACTIONS = {
-    "echo",
-    "collect_system",
-    "list_processes",
-    "list_directory",
     "restart_agent",
 }
 

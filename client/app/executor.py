@@ -15,21 +15,13 @@ from .system_info import (
 
 
 class Executor:
-    ALLOWED_ACTIONS = {"echo", "collect_system", "list_processes", "list_directory", "restart_agent"}
+    ALLOWED_ACTIONS = {"restart_agent"}
 
     def run(self, action: str, payload: Dict[str, Any]) -> Dict[str, str]:
         if action not in self.ALLOWED_ACTIONS:
             return {"status": "error", "output": f"action_not_allowed: {action}"}
 
         try:
-            if action == "echo":
-                return {"status": "success", "output": str(payload.get("message", ""))}
-            if action == "collect_system":
-                return {"status": "success", "output": self._collect_system()}
-            if action == "list_processes":
-                return {"status": "success", "output": self._list_processes()}
-            if action == "list_directory":
-                return {"status": "success", "output": self._list_directory(payload)}
             if action == "restart_agent":
                 return {"status": "success", "output": "restart_requested"}
         except Exception as exc:
