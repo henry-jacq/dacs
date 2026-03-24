@@ -1,0 +1,8 @@
+{
+  "server_url": "ws://127.0.0.1:8080/ws",
+  "client_id": "node-local",
+  "token": "change-me-agent-token",
+  "version": "1.0",
+  "heartbeat_seconds": 10,
+  "insecure_tls": false
+}

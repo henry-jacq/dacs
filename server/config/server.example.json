@@ -1,0 +1,11 @@
+{
+  "host": "0.0.0.0",
+  "port": 8080,
+  "agent_token": "change-me-agent-token",
+  "inactive_timeout_seconds": 45,
+  "cleanup_interval_seconds": 10,
+  "allowed_origins": [
+    "http://localhost",
+    "http://127.0.0.1"
+  ]
+}
