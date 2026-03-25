@@ -56,46 +56,47 @@ if __name__ == "__main__":
     start()
 """)
 
-    print("[*] Checking dependencies...")
+    print("[*] Checking native compiler dependencies...")
     try:
-        import PyInstaller
+        import nuitka
     except ImportError:
-        print("[!] PyInstaller not found. Installing via pip...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
+        print("[!] Nuitka native compiler not found. Installing via pip...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "nuitka"])
         
     os_name = "linux" if plat_choice == "1" else "windows.exe"
-    print(f"[*] Compiling via PyInstaller for {os_name}...")
+    print(f"[*] Compiling natively via Nuitka for {os_name}...")
     
     binary_name = f"dacs_agent_{os_name}"
+    target_path = os.path.join("dist", binary_name)
+    
     cmd = [
-        sys.executable, "-m", "PyInstaller",
-        "--noconfirm",
+        sys.executable, "-m", "nuitka",
+        "--standalone",
         "--onefile",
-        "--noconsole",
-        "--name", binary_name,
-        "--hidden-import", "websockets",
+        "--remove-output",
+        "-o", target_path,
+        "--disable-console",
         payload_path
     ]
     
     if plat_choice == "2" and sys.platform != "win32":
         print("\n[!] WARNING: You selected Windows but are running Linux.")
-        print("    Python's PyInstaller requires Windows natively (or Wine) to build a .exe.")
-        print("    This build process will likely generate an ELF binary or fail.")
-        print("    For official Windows cross-compilation, run this script inside Wine wrapper.")
+        print("    Nuitka translates Python to C and strictly requires a Windows C-Compiler natively (or MinGW/Wine).")
+        print("    Attempting completion. Execution may yield a Linux ELF binary targeting the fallback GCC.")
         
     try:
         print(f"\n[*] Executing: {' '.join(cmd)}")
         subprocess.check_call(cmd)
-        target_path = os.path.join("dist", binary_name)
-        print(f"\n[+] SUCCESS! Standalone binary built: {target_path}")
+        print(f"\n[+] SUCCESS! Standalone native binary compiled to C and packed: {target_path}")
     except subprocess.CalledProcessError as e:
         print(f"\n[-] Build failed with exit code {e.returncode}")
+        print("[-] Ensure you have a valid C compiler installed (GCC on Linux, MSVC/MinGW on Windows).")
     finally:
         try:
             os.remove(payload_path)
-            shutil.rmtree("build", ignore_errors=True)
-            if os.path.exists(f"{binary_name}.spec"):
-                os.remove(f"{binary_name}.spec")
+            shutil.rmtree("dist/dacs_payload.build", ignore_errors=True)
+            shutil.rmtree("dist/dacs_payload.dist", ignore_errors=True)
+            shutil.rmtree("dist/dacs_payload.onefile-build", ignore_errors=True)
         except Exception:
             pass
 
