@@ -1,101 +1,103 @@
-# DACS (Distributed Agent Control System)
+# DACS: Distributed Agent Control System
 
-A high-performance, OS-agnostic Distributed Agent Control System operating over persistent WebSocket connections. Built for remote management, offering robust bi-directional interactive shells and large-scale file streaming.
-
-## 🚀 Key Features
-
-- **Asynchronous WebSocket Architecture**: Lightweight, high-concurrency server handling numerous remote clients using a custom JSON-RPC style event loop.
-- **Interactive Reverse TTY**: Full pseudo-terminal (PTY) allocation on POSIX systems with seamless Windows standard-pipe fallback. Creates native raw-mode shell environments complete with command auto-completion and stable process isolation.
-- **Chunked File Transfer**: Built-in support for streaming massive files over WebSockets (`upload` and `download`) using background encoding to completely prevent memory explosion.
-- **Dynamic Task Dispatch**: Send native dynamic tasks easily from the server to specific client agents asynchronously without blocking the central heartbeat multiplexer.
+DACS (Distributed Agent Control System) is an OS-agnostic command and control framework operating over persistent WebSocket connections. It is designed to manage fleet systems natively by providing bi-directional pseudo-terminals and handling large-scale file streaming.
 
 ---
 
-## 📂 Project Structure
+## Core Capabilities
+
+- **Modular Backend Architecture**: Engineered using standard SOLID design principles, decoupling state, transport, and handler logic into independent components to prevent monolithic code structures.
+- **Bi-Directional Reverse TTY**: Provides full PTY environment allocation on POSIX systems with standard pipe bridging on Windows. Enables robust interactive remote administration, including shell formatting and `Ctrl-X` detachment flow.
+- **Chunked File Transfer**: Utilizes base64-encoded chunk streaming via built-in `upload` and `download` commands, allowing for the transfer of heavily oversized files while bounding memory consumption.
+- **Contextual Dashboard Interface**: Operates via a CLI menu that cleanly distinguishes between global node exploration and active single-session management.
+
+---
+
+## Architecture Layout
 
 ```text
 server/
-  app/            # Async WebSocket Controller & Interactive Tactical Console
-  config/         # Server Configuration
+ ├── app/
+ │   ├── main.py        - Application bootstrap and entrypoint
+ │   ├── server.py      - WebSocket protocol and asynchronous serving tasks
+ │   ├── console.py     - Interactive command-line loop handling
+ │   ├── handlers.py    - Connection and action event deserialization 
+ │   ├── state.py       - Active registry and memory cache container
+ │   ├── schemas.py     - Configuration layout dictionary
+ │   ├── utils.py       - Shared utility logic and path resolution
+ │   └── logger.py      - Configured interactive console outputs
+ │
+ └── config/            - Server environment definitions
 
 client/
-  app/            # Reconnecting Agent, Executor, TTY, & Transfer components
-  config/         # Client Configuration
-
-deploy/apache/    # Apache Reverse-Proxy (WSS) reference
+ ├── app/
+ │   ├── main.py        - Standalone agent launcher
+ │   ├── agent.py       - Background processing loop
+ │   ├── executor.py    - OS execution abstraction
+ │   ├── tty.py         - Platform-agnostic PTY allocation
+ │   ├── transfer.py    - Background binary assembler
+ │   └── logger.py      - Configured client logging contexts
+ │
+ └── config/            - Remote client configuration
 ```
 
-## ⚙️ Configuration
+---
 
-Configuration values are dynamically loaded overriding defaults in the following precise order:
-1. `.env` files
-2. JSON configuration files
-3. Active system Environment Variables
-4. Application defaults
+## Installation and Deployment
 
-## ⚡ Quick Start
-
-### 1. Installation
-
+### 1. Requirements
+DACS strictly operates on Python 3.12+. Set up independent virtual environments natively for both the server framework and designated targets.
 ```bash
-cd /home/henry/dacs
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
-
-Copy the example configurations to bootstrap your setup:
+### 2. Configuration Setup
+Populate configuration environments spanning both the server and the targets.
 ```bash
 cp server/config/.env.example server/config/.env
 cp server/config/server.example.json server/config/server.json
 cp client/config/.env.example client/config/.env
 cp client/config/client.example.json client/config/client.json
 ```
-**Important**: Ensure the `DACS_AGENT_TOKEN` is identical across both the server and initialized clients. Customize `DACS_CLIENT_ID` uniquely for each client prior to running.
+**Authentication Key**: Ensure `DACS_AGENT_TOKEN` is structurally identical across the entire Client and Server configuration to prevent WebSocket negotiation failures.
 
-### 3. Launching DACS
+### 3. Application Execution
 
 **Start the Server:**
 ```bash
 python -m server.app.main
 ```
-
-**Start the Client:**
+**Start the Client Component:**
 ```bash
 python -m client.app.main
 ```
 
 ---
 
-## 💻 Server Console Commands
+## Command Line Interface 
 
-The DACS Command Line Interface operates via a tactical console tracking connected clients and managing interactive task states.
+DACS relies upon an interactive prompt. The interface splits command availability based on terminal context (`global` or `session`).
 
-### Core Workflow
-- `help`: View all available commands
-- `sessions` / `clients`: List currently connected active nodes
-- `use <client_id>`: Enter an interactive session targeting a specific client
-- `back`: Exit the active context session
-- `clear` / `cls`: Clear the console output
-- `quit`: Shutdown the server cleanly
+### Global Scope Commands
+Accessible by default at the standard `dacs>` prompt. Allows for sweeping navigation across active clients.
+- `sessions` / `clients`: Return a comprehensive table encompassing active host parameters (IP Address, version, active OS).
+- `use <client_id>`: Enter into an exclusive subshell targeting the specified client identifier.
+- `tty <client_id>`: Instantiate and interact with a raw remote PTY mapped to the localized standard process pipelines. 
+- `task <task_id>`: Retrieve specific task parameters historically executed by the system orchestrators.
 
-### Session Commands (Requires `use <client_id>`)
-- `tty`: Initiates a raw, bi-directional interactive OS shell. Press `Ctrl+X` to gracefully detach and background the shell process.
-- `upload <local_path> <remote_path>`: Streams a file to the remote client. Safely auto-expands `~` and resolves paths using the native `transfers/` isolation directory logic.
-- `download <remote_path> <local_path>`: Streams a file from the client. Leaving `<local_path>` blank automatically routes the file securely into the local server's `transfers/` folder.
-- `run <action_name> [payload_json]`: Execute a designated action template interactively or via hardcoded JSON payload.
-
-### Available Actions (`run`)
-- `restart_agent`
-
-### Task History
-- `task <task_id>`: Query a task's full result details in JSON
+### Target Session Commands
+Accessible only inside an active target (`dacs(node-local)>`). Context switches strictly to execute instructions directly to the bound client.
+- `info`: Return the active session configuration breakdown natively parsing operating properties.
+- `run <action_name>`: Fire an arbitrary predefined payload (usage ex: `run restart_agent`).
+- `upload <server_path> <client_path>`: Push arbitrary file assets downstream directly into the client instance. Automatically expands path shortcuts.
+- `download <client_path> [server_path]`: Download remote files back upstream. If `server_path` is left empty, the transfer writes securely into an isolated `transfers/` hierarchy bound internally.
+- `tty`: Drop keyboard IO entirely to the native OS standard pipes. Issue `Ctrl+X` exclusively to gracefully detach the process layout.
+- `back`: Unmap context variables to revert to the base console tracker environment. 
 
 ---
 
-## 🌐 Secure Deployment (WSS)
+## Advanced Deployment (Proxying)
 
-For deploying over an encrypted `wss://` protocol:
-Use the provided [dacs.conf](deploy/apache/dacs.conf) to setup an Apache reverse-proxy routing your secure WebSocket layer proxying `/ws` into the private listening socket on `ws://127.0.0.1:8080/ws`.
+Use the bundled Apache configuration profile found within `deploy/apache/dacs.conf` to execute the service wrapped inside standard Web Application security environments routing HTTPS proxy logic seamlessly mapping over local unprivileged bindings (`localhost:8080/ws`).
