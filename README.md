@@ -76,6 +76,21 @@ python -m client.app.main
 
 ---
 
+## Compiling Standalone Agents
+
+DACS includes an interactive builder (`build_client.py`) capable of packaging the entire client framework into a single, standalone executable binary (`dacs_agent_linux` or `dacs_agent_windows.exe`).
+
+The compilation pipeline automatically requests target connection details (Server URL, Auth Token, Client ID) and natively bakes these configurations directly into the resulting binary's runtime environment. This guarantees zero-dependency execution on target endpoints without transferring independent environment or JSON configuration files alongside the binary.
+
+**Compilation Steps:**
+Execute the builder natively across the target ecosystem. The script automatically manages the installation of `PyInstaller` if absent:
+```bash
+python build_client.py
+```
+*Note: Python architectural cross-compilation restrictions mandate that building a native Windows `.exe` binary strictly requires running the builder directly on a Windows host or utilizing a configured Wine container wrapper on Linux.*
+
+---
+
 ## Command Line Interface 
 
 DACS relies upon an interactive prompt. The interface splits command availability based on terminal context (`global` or `session`).
