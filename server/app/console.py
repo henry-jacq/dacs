@@ -17,6 +17,8 @@ from .utils import (
     format_clients_for_json,
     render_help,
     setup_readline,
+    resolve_upload_path,
+    resolve_download_path,
 )
 
 async def console_loop() -> None:
@@ -167,20 +169,7 @@ async def console_loop() -> None:
             raw_local = parts[1]
             remote_path = parts[2]
             
-            expanded = os.path.expanduser(os.path.expandvars(raw_local))
-            if os.path.isabs(expanded):
-                local_path = expanded
-            else:
-                transfer_dir = os.path.join(os.getcwd(), 'transfers')
-                os.makedirs(transfer_dir, exist_ok=True)
-                cand1 = os.path.join(transfer_dir, expanded)
-                cand2 = os.path.join(os.getcwd(), expanded)
-                if os.path.exists(cand1):
-                    local_path = cand1
-                elif os.path.exists(cand2):
-                    local_path = cand2
-                else:
-                    local_path = cand2
+            local_path = resolve_upload_path(raw_local)
             
             client = await registry.get_client(active_session)
             if not client:
@@ -241,16 +230,7 @@ async def console_loop() -> None:
             else:
                 raw_local = os.path.join('transfers', os.path.basename(remote_path.replace("\\", "/")))
             
-            expanded = os.path.expanduser(os.path.expandvars(raw_local))
-            if os.path.isabs(expanded):
-                local_path = expanded
-            else:
-                transfer_dir = os.path.join(os.getcwd(), 'transfers')
-                os.makedirs(transfer_dir, exist_ok=True)
-                if raw_local.startswith("transfers"):
-                    local_path = os.path.join(os.getcwd(), expanded)
-                else:
-                    local_path = os.path.join(transfer_dir, expanded)
+            local_path = resolve_download_path(raw_local)
 
             try:
                 os.makedirs(os.path.dirname(os.path.abspath(local_path)), exist_ok=True)

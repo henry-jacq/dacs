@@ -127,6 +127,24 @@ def _build_payload_interactive(action: str) -> Optional[Dict[str, Any]]:
         payload[name] = value
     return payload
 
+def resolve_upload_path(raw_path: str) -> str:
+    expanded = os.path.expanduser(os.path.expandvars(raw_path))
+    if os.path.isabs(expanded):
+        return expanded
+    transfer_dir = os.path.join(os.getcwd(), 'transfers')
+    os.makedirs(transfer_dir, exist_ok=True)
+    cand1 = os.path.join(transfer_dir, expanded)
+    cand2 = os.path.join(os.getcwd(), expanded)
+    return cand1 if os.path.exists(cand1) else cand2
+
+def resolve_download_path(raw_path: str) -> str:
+    expanded = os.path.expanduser(os.path.expandvars(raw_path))
+    if os.path.isabs(expanded):
+        return expanded
+    transfer_dir = os.path.join(os.getcwd(), 'transfers')
+    os.makedirs(transfer_dir, exist_ok=True)
+    return os.path.join(os.getcwd(), expanded) if raw_path.startswith("transfers") else os.path.join(transfer_dir, expanded)
+
 def _origin_allowed(origin: Optional[str], settings: Any) -> bool:
     if not settings.allowed_origins:
         return True
